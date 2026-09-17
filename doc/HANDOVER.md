@@ -257,36 +257,8 @@ git checkout upstream/main -- test/ .gitattributes .editorconfig Unix-*.sh
 - **不要 `git add -A` 之前不检查**：`.env`（含 GEMINI_API_KEY）与 `presets/`
   靠 `.gitignore` 排除；该文件曾被删，若再删必须先恢复
 
-## 10. 批量处理标准流程（可复用，2026-09-17 验证）
+## 10. 批量处理流程
 
-适用于任何作品/语言块的新增批量 OCR+擦除，四步一闭环：
-
-### 步骤 1：前置确认
-- 容器 healthy、分支正确、两份 `filter_list.json` 同步、磁盘余量
-- 待处理章节的页数盘点（`ls | wc -l`），标记异常大章（可能是合集）
-
-### 步骤 2：试点批（3 章、30–40 页）
-```powershell
-MSYS_NO_PATHCONV=1 docker exec manga-translator-gpu python -m manga_translator.chapter_pipeline.prepare `
-  --stages ocr inpaint --chapters "Chapter A" "Chapter B" "Chapter C" `
-  --report-path /data/pipeline/reports/pilot-<lang>.json
-```
-试点回答 4 个问题：语言路由对不对 / 识别质量（重音、符号）/ 参数基线够不够 /
-过滤规则命中与误伤。
-
-### 步骤 3：验收（四级，缺一不可）
-1. **报告级**：`publish_errors: []`、无 error 章、`report_path` 未被路径转义写坏
-2. **计数级**：每章发布页数 = RAW 页数；区域数不异常偏低（偏低 = 路由错模型）
-3. **语言级**：扫 `.pipeline/ocr/<hash>/*.json`，统计韩文区域数（应为 0/个位数）、
-   空文本区域数（应为 0）、`prob` 分布
-4. **目测级**（必须，统计全绿≠没问题，§3.6 是教训）：每批抽 2 章 × 3–5 页看擦除；
-   发现异常时用蒙版叠加图定位（`mask_raw` base64 解码后叠原图）
-
-### 步骤 4：参数/过滤定稿 → 全量分批
-- 参数覆盖只写 `config/series/<slug>.yaml` 的对应语言规则，不改代码
-- **过滤列表必须在全量前定稿**（改动 = 全部 OCR 缓存失效）
-- 全量分 2–3 批，每批独立报告，批间抽验
-- 收尾：更新本文件数据状态 + git 提交推送
-
-### 速率参考（720px 宽长条，lama_large）
-OCR ≈ 3.7 s/页（拼接 +10%），擦除 ≈ 1.3 s/页；100 页约 9–10 分钟。
+标准流程（试点→四级验收→过滤定稿→分批全量）已固化为长期文档：
+**`doc/CHAPTER_PIPELINE.md` 的 "Batch OCR + Erase Workflow" 一节**。本文件只记录
+当前进度，不复载流程。

@@ -94,3 +94,72 @@ OCR and translated page JSON keep the same schema across providers.
 - Chapter summaries and events retain page/region citations.
 - Embeddings are disabled unless `MT_ENABLE_EMBEDDINGS=true`; exact/FTS
   translation-memory retrieval is used first.
+
+## Batch OCR + Erase Workflow
+
+Validated loop (2026-09-17, Wireless Onahole 70–90 Korean / 91+ Spanish) for
+batching new chapters of any series. Per-series behaviour lives in
+`config/series/<slug>.yaml`; see `doc/SERIES_CONFIG.md`.
+
+### 1. Pre-flight
+
+- Container healthy, correct branch, both copies of `config/filter_list.json`
+  and `packaging/data/config/filter_list.json` in sync, disk headroom.
+- Inventory page counts of the target chapters; flag oversized chapters
+  (they may be bundled volumes needing a separate decision).
+
+### 2. Pilot batch (3 chapters, 30–40 pages)
+
+```bash
+MSYS_NO_PATHCONV=1 docker exec manga-translator-gpu python -m \
+  manga_translator.chapter_pipeline.prepare \
+  --stages ocr inpaint \
+  --chapters "Chapter A" "Chapter B" "Chapter C" \
+  --report-path /data/pipeline/reports/pilot-<lang>.json
+```
+
+(`MSYS_NO_PATHCONV=1` is only needed from Git Bash; without it `/data/...`
+arguments are rewritten to `C:/Program Files/Git/data/...`.)
+
+The pilot answers four questions: is the language routing correct, is
+recognition quality acceptable (accents, punctuation), is the parameter
+baseline sufficient, and how do the filter rules hit (watermarks vs
+false positives on dialogue).
+
+### 3. Acceptance (four levels, all mandatory)
+
+1. **Report**: `publish_errors: []`, no errored chapters, `report_path`
+   intact.
+2. **Counts**: published page count == RAW page count per chapter; region
+   count not abnormally low (a collapse means the wrong OCR model ran).
+3. **Language**: scan `.pipeline/ocr/<hash>/*.json` — Korean-region count
+   should be 0 (or single digits) for a Latin block, empty-text regions 0,
+   `prob` distribution healthy.
+4. **Visual** (mandatory — statistics can be all green while the output is
+   broken; see the page-001 incident below): spot-check 2 chapters × 3–5
+   pages per batch. To debug, decode `mask_raw` (base64 PNG) and overlay it
+   on the raw page to see where the mask actually landed.
+
+### 4. Freeze parameters/filters, then run full batches
+
+- Parameter overrides go into the series YAML language rules, never code.
+- **Finalize the filter list before the full run** — any change invalidates
+  every OCR cache (filter rules are part of the stage version hash).
+- Run the rest in 2–3 batches with separate reports; spot-check between
+  batches; update series data status and commit afterwards.
+
+### Throughput reference (720px-wide webtoon strips, lama_large)
+
+OCR ≈ 3.7 s/page (boundary stitching adds ~10%), inpaint ≈ 1.3 s/page;
+roughly 9–10 minutes per 100 pages.
+
+### Pitfalls learned
+
+- **Code changes do not invalidate artifacts**: `version_hash` covers only
+  stage/model/config/input. After changing pipeline code, delete the affected
+  chapters' `.pipeline` directories and re-run.
+- **Page 001 mask misalignment** (fixed 2026-09-17): a first page gets the
+  next page's head appended with `offset == 0`, which used to short-circuit
+  coordinate restoration, leaving the mask at stitched height and smearing
+  the inpaint. Kept here because any future coordinate-frame change must be
+  checked on the first and last page of a chapter, not just middle pages.
