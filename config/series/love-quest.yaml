@@ -1,0 +1,62 @@
+# Love Quest —— 章节流水线的原始作品。
+#
+# 语言分区：Chapter 1-14 韩文，Chapter 15 起西班牙文（Chapter 24.5 由兜底规则覆盖）。
+# 迁移自 2026-09 之前写死在代码里的规则；slug 保持 love-quest，以便继续复用
+# 已有的 pipeline.db 历史与已生成的结果目录。
+
+name: Love Quest
+slug: love-quest
+
+paths:
+  raw: "${MT_LIBRARY_ROOT}/Love Quest Raw/RAW"
+  results: "${MT_LIBRARY_ROOT}/Love Quest Raw/results"
+  database: "${MT_PIPELINE_ROOT}/pipeline.db"
+
+inventory:
+  # 0 表示关闭章节数/页数校验（当前原稿共 34 章）
+  expected_chapters: 34
+
+languages:
+  # 每条规则可以带上该章节区间的参数覆盖（深合并到 defaults 之上）；
+  # 优先级：作业 options > 语言规则覆盖 > defaults。
+  # Love Quest 的两个语言块目前共用 defaults 那一套实测参数，未做区分。
+  - chapters: "1-14"
+    source: ko
+    ocr_model: paddleocr_korean
+    ocr_hint: Korean
+    translator_code: KOR
+  - chapters: "*"
+    source: es
+    ocr_model: paddleocr_latin
+    ocr_hint: Spanish
+    translator_code: ESP
+
+translation:
+  target: zh-Hans
+  target_code: CHS
+
+defaults:
+  ocr_pages_per_batch: 8
+  mask_dilation: 20
+  models:
+    inpaint: lama_large
+  stage_config:
+    ocr:
+      detector: default
+      detection_size: 2048
+      text_threshold: 0.45
+      box_threshold: 0.65
+      unclip_ratio: 2.5
+      min_box_area_ratio: 0.0008
+      ignore_bubble: 0.3
+      min_text_length: 1
+      use_hybrid_ocr: false
+      use_model_bubble_filter: false
+      use_model_bubble_repair_intersection: false
+      limit_mask_dilation_to_bubble_mask: false
+      merge_gamma: 0.9
+      merge_sigma: 2.5
+      merge_edge_ratio_threshold: 0.0
+      merge_special_require_full_wrap: true
+    inpaint:
+      inpainting_size: 2048

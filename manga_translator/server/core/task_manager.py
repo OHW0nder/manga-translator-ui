@@ -7,6 +7,7 @@
 """
 
 import asyncio
+import inspect
 import logging
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -344,7 +345,14 @@ def reset_global_translator():
             logger.info("正在重置全局翻译器...")
             try:
                 if hasattr(_global_translator, 'unload_models'):
-                    _global_translator.unload_models()
+                    unload_result = _global_translator.unload_models()
+                    if inspect.isawaitable(unload_result):
+                        try:
+                            loop = asyncio.get_running_loop()
+                        except RuntimeError:
+                            asyncio.run(unload_result)
+                        else:
+                            loop.create_task(unload_result)
             except Exception as e:
                 logger.warning(f"卸载模型时出错: {e}")
             

@@ -8,6 +8,7 @@ from manga_translator.server.routes.admin import router as admin_router
 from manga_translator.server.routes.audit import router as audit_router
 from manga_translator.server.routes.auth import init_auth_services
 from manga_translator.server.routes.auth import router as auth_router
+from manga_translator.server.routes.chapters import router as chapters_router
 from manga_translator.server.routes.config import router as config_router
 from manga_translator.server.routes.files import router as files_router
 from manga_translator.server.routes.groups import router as groups_router
@@ -37,6 +38,7 @@ __all__ = [
     'users_router',
     'audit_router',
     'auth_router',
+    'chapters_router',
     'init_auth_services',
     'groups_router',
     'resources_router',

@@ -28,6 +28,14 @@ dist/
 # Models directory (large binary files - use git-lfs or separate download)
 /models/
 
+# Portable runtime payload (mirrors .dockerignore; multi-GB binaries, never commit)
+/PortableGit/
+/packaging/data/
+/packaging/python/
+/packaging/build/
+/packaging/dist/
+/packaging/uv.exe
+
 # Models backup directory (downloaded models for hosting)
 models_backup/
 

@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>章节流水线</title>
+    <style>
+        :root {
+            --ink: #182026;
+            --muted: #5c6972;
+            --line: #cbd4da;
+            --panel: #f6f8f9;
+            --paper: #ffffff;
+            --accent: #126b5b;
+            --accent-strong: #0c4f43;
+            --warn: #9a5b00;
+            --danger: #a12b2b;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            color: var(--ink);
+            background: #eef2f3;
+            font: 14px/1.45 "Segoe UI", "Microsoft YaHei UI", sans-serif;
+        }
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            padding: 18px 28px;
+            background: var(--ink);
+            color: white;
+        }
+        header h1 { margin: 0; font-size: 21px; }
+        header nav { display: flex; gap: 16px; }
+        header a { color: white; text-decoration: none; }
+        main {
+            display: grid;
+            grid-template-columns: minmax(310px, 380px) minmax(0, 1fr);
+            gap: 18px;
+            padding: 18px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        section {
+            background: var(--paper);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 16px;
+        }
+        section + section { margin-top: 18px; }
+        h2 { margin: 0 0 14px; font-size: 16px; }
+        h3 { margin: 0 0 10px; font-size: 14px; }
+        label { color: var(--muted); }
+        button, select, input[type="text"] {
+            min-height: 36px;
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            background: white;
+            color: var(--ink);
+            font: inherit;
+        }
+        button {
+            padding: 7px 12px;
+            cursor: pointer;
+            background: var(--panel);
+        }
+        button:hover { border-color: #8fa1ab; }
+        button.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+        button.primary:hover { background: var(--accent-strong); }
+        button.danger { color: var(--danger); }
+        button:disabled { opacity: .5; cursor: default; }
+        select, input[type="text"] { width: 100%; padding: 7px 9px; }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .toolbar > * { flex: 0 0 auto; }
+        .status-line {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .metric {
+            border-left: 3px solid var(--accent);
+            padding-left: 10px;
+        }
+        .metric span { display: block; color: var(--muted); font-size: 12px; }
+        .metric strong { font-size: 18px; }
+        .form-row { margin-top: 12px; }
+        .check-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+            gap: 7px;
+            max-height: 250px;
+            overflow: auto;
+            padding: 2px;
+        }
+        .check {
+            display: flex;
+            gap: 7px;
+            align-items: center;
+            padding: 6px 7px;
+            border: 1px solid #dce3e7;
+            border-radius: 4px;
+            background: var(--panel);
+        }
+        .check input { margin: 0; }
+        .job {
+            border-top: 1px solid var(--line);
+            padding: 12px 0;
+        }
+        .job:first-child { border-top: 0; padding-top: 0; }
+        .job-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: flex-start;
+        }
+        .job-id { font-family: Consolas, monospace; }
+        .job-meta, .empty { color: var(--muted); font-size: 12px; }
+        .progress {
+            height: 8px;
+            margin: 10px 0;
+            border-radius: 2px;
+            overflow: hidden;
+            background: #dce3e7;
+        }
+        .progress > div {
+            height: 100%;
+            width: 0;
+            background: var(--accent);
+        }
+        .job-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .job-actions button, .job-actions a {
+            min-height: 30px;
+            padding: 4px 9px;
+            font-size: 12px;
+        }
+        .job-actions a {
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            text-decoration: none;
+            color: var(--ink);
+            background: var(--panel);
+        }
+        .characters { display: grid; gap: 8px; }
+        .character {
+            display: grid;
+            grid-template-columns: minmax(140px, 1fr) minmax(180px, 2fr) auto;
+            gap: 10px;
+            align-items: center;
+            padding: 8px 0;
+            border-top: 1px solid var(--line);
+        }
+        .character:first-child { border-top: 0; }
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: #e6ecef;
+            color: var(--muted);
+            font-size: 11px;
+        }
+        .badge.needs_review { color: var(--warn); background: #fff1d6; }
+        .badge.confirmed { color: var(--accent-strong); background: #dff3ed; }
+        .message { min-height: 20px; color: var(--muted); }
+        .message.error { color: var(--danger); }
+        @media (max-width: 900px) {
+            main { grid-template-columns: 1fr; padding: 10px; }
+            header { padding: 14px; }
+            .status-line { grid-template-columns: 1fr 1fr; }
+            .character { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 520px) {
+            header { align-items: flex-start; flex-direction: column; }
+            .status-line { grid-template-columns: 1fr; }
+            .job-head { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1 id="pipeline-title">章节流水线</h1>
+    <nav><a href="/">翻译工作台</a><a href="/admin">管理</a></nav>
+</header>
+<main>
+    <div>
+        <section>
+            <h2>输入</h2>
+            <div class="toolbar">
+                <button id="scan-btn">扫描 RAW</button>
+                <button id="upload-btn">上传目录</button>
+                <input id="folder-input" type="file" webkitdirectory directory multiple hidden>
+            </div>
+            <div class="form-row">
+                <label for="provider">翻译提供者</label>
+                <select id="provider">
+                    <option value="local">本地 Qwen</option>
+                    <option value="online">在线 OpenAI 兼容 API</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <h3>章节</h3>
+                <div id="chapters" class="check-grid"><div class="empty">尚未扫描</div></div>
+            </div>
+            <div class="form-row">
+                <h3>阶段</h3>
+                <div id="stages" class="check-grid"></div>
+            </div>
+            <div class="form-row toolbar">
+                <button id="create-job-btn" class="primary">创建任务</button>
+                <button id="select-all-btn">全选章节</button>
+            </div>
+            <p id="input-message" class="message"></p>
+        </section>
+        <section>
+            <h2>模型</h2>
+            <div id="model-status" class="job-meta">读取中...</div>
+        </section>
+    </div>
+
+    <div>
+        <section>
+            <h2>总览</h2>
+            <div class="status-line">
+                <div class="metric"><span>章节</span><strong id="chapter-count">0</strong></div>
+                <div class="metric"><span>页图</span><strong id="page-count">0</strong></div>
+                <div class="metric"><span>任务</span><strong id="job-count">0</strong></div>
+            </div>
+            <p id="inventory-message" class="message"></p>
+        </section>
+
+        <section>
+            <div class="toolbar" style="justify-content: space-between;">
+                <h2>任务</h2>
+                <button id="refresh-btn">刷新</button>
+            </div>
+            <div id="jobs"><div class="empty">暂无任务</div></div>
+        </section>
+
+        <section>
+            <div class="toolbar" style="justify-content: space-between;">
+                <h2>角色确认</h2>
+                <button id="refresh-characters-btn">刷新</button>
+            </div>
+            <div id="characters" class="characters"><div class="empty">暂无角色</div></div>
+        </section>
+    </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const stageNames = {
+    ocr: "OCR",
+    translate: "翻译",
+    inpaint: "LaMa 擦除",
+    render: "嵌字渲染",
+    summarize: "剧情摘要",
+    embed: "Embedding"
+};
+
+const state = {
+    uploadId: null,
+    inventory: null,
+    jobs: [],
+    characters: [],
+    pollTimer: null
+};
+
+function message(target, text, error = false) {
+    const element = $(target);
+    element.textContent = text || "";
+    element.classList.toggle("error", error);
+}
+
+async function api(path, options = {}) {
+    const response = await fetch(path, options);
+    const contentType = response.headers.get("content-type") || "";
+    const body = contentType.includes("application/json")
+        ? await response.json()
+        : await response.text();
+    if (!response.ok) {
+        const detail = typeof body === "object" ? JSON.stringify(body) : body;
+        throw new Error(detail || `HTTP ${response.status}`);
+    }
+    return body;
+}
+
+function renderStages() {
+    $("stages").innerHTML = Object.entries(stageNames).map(([value, label]) => `
+        <label class="check">
+            <input type="checkbox" value="${value}" checked>
+            <span>${label}</span>
+        </label>
+    `).join("");
+}
+
+function renderInventory() {
+    const inventory = state.inventory;
+    $("chapter-count").textContent = inventory?.chapter_count ?? 0;
+    $("page-count").textContent = inventory?.page_count ?? 0;
+    const chapters = inventory?.chapters || [];
+    if (!chapters.length) {
+        $("chapters").innerHTML = '<div class="empty">未找到章节</div>';
+        return;
+    }
+    $("chapters").innerHTML = chapters.map((chapter) => `
+        <label class="check" title="${chapter.source_language}">
+            <input class="chapter-check" type="checkbox" value="${chapter.name}" checked>
+            <span>${chapter.name} · ${chapter.page_count}</span>
+        </label>
+    `).join("");
+    const errors = inventory.errors || [];
+    message(
+        "inventory-message",
+        errors.length ? errors.join("；") : `${inventory.chapter_count} 章 / ${inventory.page_count} 页`,
+        errors.length > 0
+    );
+}
+
+async function scanRaw() {
+    message("input-message", "扫描中...");
+    try {
+        const inventory = await api("/chapters/inventory?include_hashes=true");
+        state.uploadId = null;
+        state.inventory = inventory;
+        renderInventory();
+        message("input-message", "RAW 已扫描");
+    } catch (error) {
+        message("input-message", error.message, true);
+    }
+}
+
+async function uploadFolder() {
+    const files = Array.from($("folder-input").files || []);
+    if (!files.length) return;
+    const uploadId = crypto.randomUUID().replaceAll("-", "");
+    const batchSize = 20;
+    message("input-message", `上传 0 / ${files.length}`);
+    try {
+        let lastInventory = null;
+        for (let start = 0; start < files.length; start += batchSize) {
+            const batch = files.slice(start, start + batchSize);
+            const form = new FormData();
+            form.append("upload_id", uploadId);
+            form.append(
+                "relative_paths",
+                JSON.stringify(batch.map((file) => file.webkitRelativePath || file.name))
+            );
+            batch.forEach((file) => form.append("files", file, file.name));
+            const result = await api("/chapters/uploads", { method: "POST", body: form });
+            lastInventory = result.inventory;
+            message("input-message", `上传 ${Math.min(start + batch.length, files.length)} / ${files.length}`);
+        }
+        state.uploadId = uploadId;
+        state.inventory = lastInventory;
+        renderInventory();
+        message("input-message", "上传完成");
+    } catch (error) {
+        message("input-message", error.message, true);
+    }
+}
+
+async function createJob() {
+    if (!state.inventory) {
+        message("input-message", "请先扫描或上传目录", true);
+        return;
+    }
+    const chapters = Array.from(document.querySelectorAll(".chapter-check:checked"))
+        .map((input) => input.value);
+    const stages = Array.from(document.querySelectorAll("#stages input:checked"))
+        .map((input) => input.value);
+    if (!chapters.length || !stages.length) {
+        message("input-message", "请至少选择一章和一个阶段", true);
+        return;
+    }
+    try {
+        const job = await api("/chapters/jobs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                chapter_names: chapters,
+                stages,
+                upload_id: state.uploadId,
+                options: {
+                    translation_provider: $("provider").value,
+                    enable_embeddings: stages.includes("embed")
+                }
+            })
+        });
+        message("input-message", `任务 ${job.id.slice(0, 8)} 已创建`);
+        await loadJobs();
+    } catch (error) {
+        message("input-message", error.message, true);
+    }
+}
+
+function formatDate(value) {
+    if (!value) return "-";
+    try { return new Date(value).toLocaleString(); } catch (_) { return value; }
+}
+
+function renderJobs() {
+    $("job-count").textContent = state.jobs.length;
+    if (!state.jobs.length) {
+        $("jobs").innerHTML = '<div class="empty">暂无任务</div>';
+        return;
+    }
+    $("jobs").innerHTML = state.jobs.map((job) => {
+        const progress = job.progress || {};
+        const completed = Number(progress.completed || 0);
+        const total = Math.max(Number(progress.total || 0), 1);
+        const percent = Math.min(100, Math.round(completed / total * 100));
+        const canPause = ["queued", "running"].includes(job.status);
+        const canResume = ["paused", "interrupted", "failed"].includes(job.status);
+        const canCancel = ["queued", "running", "paused", "interrupted"].includes(job.status);
+        return `
+            <article class="job" data-job-id="${job.id}">
+                <div class="job-head">
+                    <div>
+                        <strong class="job-id">${job.id.slice(0, 12)}</strong>
+                        <span class="badge ${job.status === "failed" ? "needs_review" : job.status === "completed" ? "confirmed" : ""}">${job.status}</span>
+                        <div class="job-meta">${job.requested_chapters.join("、")} · ${formatDate(job.updated_at)}</div>
+                    </div>
+                    <div class="job-meta">${progress.chapter || ""} ${progress.stage ? "· " + (stageNames[progress.stage] || progress.stage) : ""}</div>
+                </div>
+                <div class="progress"><div style="width:${percent}%"></div></div>
+                <div class="job-meta">${completed} / ${total} ${progress.detail || ""}</div>
+                ${job.error ? `<p class="message error">${job.error}</p>` : ""}
+                <div class="job-actions">
+                    <button data-action="pause" ${canPause ? "" : "disabled"}>暂停</button>
+                    <button data-action="resume" ${canResume ? "" : "disabled"}>继续</button>
+                    <button data-action="cancel" class="danger" ${canCancel ? "" : "disabled"}>取消</button>
+                    <a href="/chapters/jobs/${job.id}/download">下载 ZIP</a>
+                </div>
+            </article>
+        `;
+    }).join("");
+}
+
+async function loadJobs() {
+    try {
+        state.jobs = await api("/chapters/jobs?limit=100");
+        renderJobs();
+    } catch (error) {
+        message("input-message", error.message, true);
+    }
+}
+
+async function jobAction(jobId, action) {
+    try {
+        await api(`/chapters/jobs/${jobId}/${action}`, { method: "POST" });
+        await loadJobs();
+    } catch (error) {
+        message("input-message", error.message, true);
+    }
+}
+
+function renderCharacters() {
+    if (!state.characters.length) {
+        $("characters").innerHTML = '<div class="empty">暂无角色</div>';
+        return;
+    }
+    $("characters").innerHTML = state.characters.map((character) => `
+        <div class="character" data-character-id="${character.id}">
+            <div>
+                <strong>${character.confirmed_name || character.canonical_name}</strong>
+                <div class="job-meta">${(character.aliases || []).map((alias) => alias.alias).join("、") || "无别名"}</div>
+            </div>
+            <div>
+                <input class="character-name" type="text" value="${character.confirmed_name || character.canonical_name}">
+                <span class="badge ${character.review_status}">${character.review_status}</span>
+            </div>
+            <button data-action="confirm-character">确认</button>
+        </div>
+    `).join("");
+}
+
+async function loadCharacters() {
+    try {
+        state.characters = await api("/chapters/characters");
+        renderCharacters();
+    } catch (error) {
+        message("input-message", error.message, true);
+    }
+}
+
+async function confirmCharacter(characterId) {
+    const row = document.querySelector(`[data-character-id="${CSS.escape(characterId)}"]`);
+    const canonicalName = row.querySelector(".character-name").value.trim();
+    try {
+        await api(`/chapters/characters/${encodeURIComponent(characterId)}/confirm`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ canonical_name: canonicalName })
+        });
+        await loadCharacters();
+    } catch (error) {
+        message("input-message", error.message, true);
+    }
+}
+
+async function loadModelStatus() {
+    try {
+        const status = await api("/chapters/models");
+        $("model-status").textContent = status.loaded_model
+            ? `${status.loaded_model} · ${status.state || "loaded"}`
+            : (status.available === false ? `不可用：${status.error || ""}` : "未加载模型");
+    } catch (error) {
+        $("model-status").textContent = `不可用：${error.message}`;
+    }
+}async function loadSeriesInfo() {
+    try {
+        const status = await api("/chapters/status");
+        const languages = (status.languages || [])
+            .map((rule) => `${rule.chapters}:${rule.source}`)
+            .join(" · ");
+        const label = `${status.series_name || "未命名作品"} 章节流水线`;
+        document.title = label;
+        $("pipeline-title").textContent = label;
+        $("pipeline-title").title = [
+            `配置：${status.series_config || "未指定"}`,
+            `原稿：${status.raw_dir || ""}`,
+            `结果：${status.results_dir || ""}`,
+            `语言：${languages || "未配置"}`
+        ].join("\n");
+    } catch (error) {
+        $("pipeline-title").textContent = "章节流水线";
+    }
+}
+
+document.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-action]");
+    if (!button) return;
+    const job = button.closest("[data-job-id]");
+    if (job) {
+        await jobAction(job.dataset.jobId, button.dataset.action);
+        return;
+    }
+    const character = button.closest("[data-character-id]");
+    if (character && button.dataset.action === "confirm-character") {
+        await confirmCharacter(character.dataset.characterId);
+    }
+});
+
+$("scan-btn").addEventListener("click", scanRaw);
+$("upload-btn").addEventListener("click", () => $("folder-input").click());
+$("folder-input").addEventListener("change", uploadFolder);
+$("create-job-btn").addEventListener("click", createJob);
+$("select-all-btn").addEventListener("click", () => {
+    document.querySelectorAll(".chapter-check").forEach((input) => { input.checked = true; });
+});
+$("refresh-btn").addEventListener("click", loadJobs);
+$("refresh-characters-btn").addEventListener("click", loadCharacters);
+
+renderStages();
+Promise.all([loadSeriesInfo(), scanRaw(), loadJobs(), loadCharacters(), loadModelStatus()]);
+state.pollTimer = setInterval(() => {
+    loadJobs();
+    loadModelStatus();
+}, 5000);
+</script>
+</body>
+</html>

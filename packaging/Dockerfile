@@ -1,7 +1,7 @@
 # Manga Translator Docker Image
 # 支持 CPU 和 GPU 版本
 
-ARG CUDA_VERSION=12.1.0
+ARG CUDA_VERSION=13.0.0
 ARG PYTHON_VERSION=3.12
 ARG BUILD_TYPE=cpu
 
@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ===== GPU 版本 =====
-FROM nvidia/cuda:${CUDA_VERSION}-cudnn8-runtime-ubuntu22.04 AS base-gpu
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu22.04 AS base-gpu
 
 # 设置非交互式安装
 ENV DEBIAN_FRONTEND=noninteractive

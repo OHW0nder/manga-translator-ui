@@ -1,5 +1,6 @@
 
 import asyncio
+import gc
 import json
 import logging
 import os
@@ -17,7 +18,16 @@ import regex as re
 import torch
 from PIL import Image, ImageFile
 
-from .config import Colorizer, Config, Inpainter, Renderer, Translator
+from .config import (
+    Colorizer,
+    Config,
+    Detector,
+    Inpainter,
+    Ocr,
+    Renderer,
+    Translator,
+    Upscaler,
+)
 from .server_paths import normalize_server_resource_path
 from .utils import (
     BASE_PATH,
@@ -793,6 +803,9 @@ class MangaTranslator:
             'original_width': original_width,
             'original_height': original_height
         }
+        chapter_metadata = getattr(ctx, 'chapter_metadata', None)
+        if isinstance(chapter_metadata, dict):
+            data_to_save.update(chapter_metadata)
 
         preserved_skip_font_scaling = getattr(ctx, 'skip_font_scaling', None)
         if preserved_skip_font_scaling is None and os.path.exists(text_output_file):
@@ -3586,6 +3599,42 @@ class MangaTranslator:
                 logger.error(LOG_MESSAGES_ERROR[state])
 
         self.add_progress_hook(ph)
+
+    async def unload_models(self) -> None:
+        """Release every cache-backed model tracked by this translator.
+
+        The server uses this between OCR/inpainting stages and external Qwen
+        stages so an 8 GB GPU never has both model families resident.
+        """
+
+        loaded = list(self._model_usage_timestamps.keys())
+        for tool, model in loaded:
+            try:
+                if tool == 'ocr':
+                    await unload_ocr(Ocr(model))
+                elif tool == 'detection':
+                    await unload_detection(Detector(model))
+                elif tool == 'inpainting':
+                    await unload_inpainting(Inpainter(model))
+                elif tool == 'colorizer':
+                    await unload_colorization(Colorizer(model))
+                elif tool == 'upscaling':
+                    await unload_upscaling(Upscaler(model))
+            except Exception as exc:
+                logger.warning(
+                    'Failed to unload %s model %s: %s',
+                    tool,
+                    model,
+                    exc,
+                )
+        self._model_usage_timestamps.clear()
+        self._models_loaded = False
+        gc.collect()
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     async def translate_batch(self, images_with_configs: List[tuple], batch_size: int = None, image_names: List[str] = None, save_info: dict = None, global_offset: int = 0, global_total: int = None) -> List[Context]:
         """Translate a complete ordered input list and return processed and skipped results."""

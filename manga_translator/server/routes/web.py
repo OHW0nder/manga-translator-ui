@@ -61,6 +61,7 @@ async def api_info():
             "translate": "/translate/image",
             "translate_stream": "/translate/with-form/image/stream",
             "batch": "/translate/batch/json",
+            "chapters": "/chapters",
             "docs": "/docs"
         }
     }

@@ -1,0 +1,82 @@
+# Wireless Onahole —— 720px 宽韩漫长条，共 120 个章节目录（Chapter 1-119 + 114.5）。
+#
+# 语言分区：Chapter 1-90 韩文，Chapter 91 起西班牙文。
+# 当前阶段只做 OCR + LaMa 擦除，从 Chapter 70 开始。
+
+name: Wireless Onahole
+slug: wireless-onahole
+
+paths:
+  raw: "${MT_LIBRARY_ROOT}/Wireless Onahole Raw/RAW"
+  results: "${MT_LIBRARY_ROOT}/Wireless Onahole Raw/results"
+  database: "${MT_PIPELINE_ROOT}/wireless-onahole.db"
+
+inventory:
+  # 0 表示关闭章节数/页数校验
+  expected_chapters: 0
+
+languages:
+  # 每条规则除 chapters/source/ocr_model/ocr_hint/translator_code 之外的键，
+  # 都会作为该章节区间的参数覆盖，深合并到下面的 defaults 之上。
+  # 优先级：作业 options > 语言规则覆盖 > defaults。
+  - chapters: "1-90"
+    source: ko
+    ocr_model: paddleocr_korean
+    ocr_hint: Korean
+    translator_code: KOR
+    # 韩文块沿用 defaults 基线（Chapter 70 实测：73 页检出 124 区域，
+    # 气泡内对白全部擦净、气泡外拟声词保留）。
+    # 已知漏检：极少数小气泡（如页 026 的 "네~♥"）在 text_threshold 0.45 /
+    # box_threshold 0.65 下检不到。降阈值到 0.35/0.55 可找回，但会同时
+    # 检出更多水印与拟声词；如需只对韩文块生效，在此处覆盖：
+    #   stage_config:
+    #     ocr:
+    #       text_threshold: 0.35
+    #       box_threshold: 0.55
+
+  - chapters: "*"
+    source: es
+    ocr_model: paddleocr_latin
+    ocr_hint: Spanish
+    translator_code: ESP
+    # 兜底规则，实际覆盖 Chapter 91 及之后（含 90.5 这类插页）。
+    # 目前继承 defaults（韩文实测基线），尚未针对西语调参。
+    # 跑 91+ 时按实测在此覆盖，例如：
+    #   stage_config:
+    #     ocr:
+    #       text_threshold: 0.35
+    #       box_threshold: 0.55
+    #       ignore_bubble: 0.5
+    #       merge_gamma: 0.8
+    #       min_box_area_ratio: 0.0005
+    #   mask_dilation: 15
+
+translation:
+  target: zh-Hans
+  target_code: CHS
+
+defaults:
+  ocr_pages_per_batch: 8
+  mask_dilation: 20
+  models:
+    inpaint: lama_large
+  stage_config:
+    ocr:
+      detector: default
+      detection_size: 2048
+      text_threshold: 0.45
+      box_threshold: 0.65
+      unclip_ratio: 2.5
+      min_box_area_ratio: 0.0008
+      ignore_bubble: 0.3
+      min_text_length: 1
+      use_hybrid_ocr: false
+      use_model_bubble_filter: false
+      use_model_bubble_repair_intersection: false
+      limit_mask_dilation_to_bubble_mask: false
+      merge_gamma: 0.9
+      merge_sigma: 2.5
+      merge_edge_ratio_threshold: 0.0
+      merge_special_require_full_wrap: true
+    inpaint:
+      inpainting_size: 2048

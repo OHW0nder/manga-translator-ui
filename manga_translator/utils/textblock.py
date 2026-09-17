@@ -250,6 +250,17 @@ class TextBlock(object):
         self.shadow_strength = shadow_strength
         self.shadow_color = shadow_color
         self.shadow_offset = shadow_offset
+        self.schema_version = int(kwargs.get('schema_version', 1) or 1)
+        self.relative_path = str(kwargs.get('relative_path') or '')
+        self.source_language = str(
+            kwargs.get('source_language') or source_lang or ''
+        )
+        self.speaker_id = kwargs.get('speaker_id')
+        self.speaker_name = kwargs.get('speaker_name')
+        self.speaker_confidence = kwargs.get('speaker_confidence')
+        self.speech_type = str(kwargs.get('speech_type') or 'unknown')
+        self.artifact_version = str(kwargs.get('artifact_version') or '')
+        self.review_status = str(kwargs.get('review_status') or 'unreviewed')
 
         # 可选：从 JSON 读取的渲染中心（优先于 lines 自动计算中心）
         center_override = kwargs.get('center', None)
@@ -496,6 +507,15 @@ class TextBlock(object):
             'stroke_width': self.default_stroke_width,
             'prob': self.prob,
             'font_family': getattr(self, 'font_family', ''),
+            'schema_version': getattr(self, 'schema_version', 1),
+            'relative_path': getattr(self, 'relative_path', ''),
+            'source_language': getattr(self, 'source_language', '') or self.source_lang,
+            'speaker_id': getattr(self, 'speaker_id', None),
+            'speaker_name': getattr(self, 'speaker_name', None),
+            'speaker_confidence': getattr(self, 'speaker_confidence', None),
+            'speech_type': getattr(self, 'speech_type', 'unknown'),
+            'artifact_version': getattr(self, 'artifact_version', ''),
+            'review_status': getattr(self, 'review_status', 'unreviewed'),
         }
         if self.translation_rich is not None:
             from ..rendering.rich_text import is_redundant_plain_document

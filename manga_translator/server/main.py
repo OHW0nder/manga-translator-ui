@@ -59,6 +59,7 @@ from manga_translator.server.routes import (
     admin_router,
     audit_router,
     auth_router,
+    chapters_router,
     config_management_router,
     config_router,
     files_router,
@@ -130,11 +131,13 @@ async def startup_event():
     )
     from manga_translator.server.core.logging_manager import add_log
     from manga_translator.server.routes.translation_auth import init_translation_auth
+    from manga_translator.chapter_pipeline.service import get_pipeline_service
     
     # 添加启动日志
     add_log("服务器正在启动...", "INFO")
     logger.info("Server starting up...")
     _ensure_web_startup_files()
+    get_pipeline_service()
     from manga_translator.server.core.permission_integration import (
         IntegratedPermissionService,
     )
@@ -238,6 +241,10 @@ async def shutdown_event():
     
     if _system_initializer:
         await _system_initializer.shutdown()
+
+    from manga_translator.chapter_pipeline.service import shutdown_pipeline_service
+
+    await shutdown_pipeline_service()
     
     logger.info("Server shutdown completed")
 
@@ -303,6 +310,7 @@ app.include_router(users_router)
 app.include_router(sessions_router)
 app.include_router(audit_router)
 app.include_router(auth_router)
+app.include_router(chapters_router)
 app.include_router(groups_router)
 app.include_router(resources_router)
 app.include_router(history_router)

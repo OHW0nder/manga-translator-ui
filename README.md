@@ -165,6 +165,21 @@ docker run -d --name manga-translator -p 8000:8000 --restart unless-stopped -v m
 
 命名卷会持久化模型、字体、词典、配置、账号数据、日志和翻译结果；删除容器不会删除这些数据。启动后访问 `http://localhost:8000`，需要 GPU 或自定义宿主机目录时参阅相关部署文档。 📖 [Docker 部署](https://hgmzhn.github.io/manga-translator-ui/zh/install/docker) ｜ [Web UI 启动与访问](https://hgmzhn.github.io/manga-translator-ui/zh/web/launch-and-access)
 
+### 章节流水线、OCR-only 与长线任务
+
+本项目新增了 Docker WebUI 章节流水线，支持：
+
+- 按 `Chapter N` 目录批量扫描和保留相对路径上传。
+- 韩文 `paddleocr_korean` 与西班牙文 `paddleocr_latin` 自动切换。
+- 只执行 OCR，或继续执行 LaMa 擦除、HQ 翻译和嵌字渲染。
+- 任务暂停、继续、取消、阶段重试、单页重译。
+- SQLite 检查点、版本化中间产物和中断续跑。
+- 按章节结构导出 ZIP。
+
+完整中文手册见：[项目使用手册](doc/USER_GUIDE_ZH.md)。
+
+章节流水线入口：`http://127.0.0.1:8001/chapters`。
+
 ---
 
 ## 📖 使用教程

@@ -1,29 +1,76 @@
-# 自定义翻译提示词模板
-# Custom translation prompt template
-#
-# 使用方法：
-#   1. 复制此文件并重命名（例如 my_manga_prompt.yaml）
-#   2. 编辑下面的 system_prompt 和 glossary 部分
-#   3. 在翻译设置中选择此文件
-#
-# 提示词中可以使用 {{{target_lang}}} 占位符，会被替换为目标语言名称
-
-# 自定义系统提示词（留空则仅使用内置的基础提示词，此处内容会叠加在基础提示词之前）
-system_prompt: ""
-
-# 术语表（确保角色名、地名等翻译一致）
+system_prompt: ''
 glossary:
   Person:
-    - original: ""
-      aliases:
-        - original: ""
-          translations:
-            - text: ""
-              condition: ""
-      description: ""
-      overwrite: false
-  Location: []
-  Org: []
+  - original: ''
+    aliases:
+    - original: ''
+      translations:
+      - text: ''
+        condition: ''
+    description: ''
+    overwrite: false
+  - original: 오빠
+    aliases:
+    - original: 오빠
+      translations:
+      - text: 欧巴
+    overwrite: false
+  - original: 笠
+    aliases:
+    - original: 笠
+      translations:
+      - text: Kasa
+    overwrite: false
+  - original: INHA
+    aliases:
+    - original: INHA
+      translations:
+      - text: 英华
+    overwrite: false
+  - original: CHAESUHYEON
+    aliases:
+    - original: CHAESUHYEON
+      translations:
+      - text: 蔡秀妍
+    overwrite: false
+  - original: OPA
+    aliases:
+    - original: OPA
+      translations:
+      - text: 哥哥
+    overwrite: false
+  - original: YEONGSU
+    aliases:
+    - original: YEONGSU
+      translations:
+      - text: 英哲苏
+    overwrite: false
+  - original: KWAK YEONGSU
+    aliases:
+    - original: KWAK YEONGSU
+      translations:
+      - text: 夸英哲苏
+    overwrite: false
+  Location:
+  - original: RAYA
+    aliases:
+    - original: RAYA
+      translations:
+      - text: 莱亚
+    overwrite: false
+  Org:
+  - original: TOON 뉴엑스틀
+    aliases:
+    - original: TOON 뉴엑스틀
+      translations:
+      - text: TOON New Extl
+    overwrite: false
+  - original: TOON 뉴욕스튼
+    aliases:
+    - original: TOON 뉴욕스튼
+      translations:
+      - text: TOON 纽约斯顿
+    overwrite: false
   Item: []
   Skill: []
   Creature: []

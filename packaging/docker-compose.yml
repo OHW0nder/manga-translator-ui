@@ -1,8 +1,7 @@
-version: '3.8'
-
 services:
   # CPU 版本
   manga-translator-cpu:
+    profiles: ["cpu"]
     build:
       context: ..
       dockerfile: packaging/Dockerfile
@@ -58,18 +57,37 @@ services:
       dockerfile: packaging/Dockerfile
       args:
         BUILD_TYPE: gpu
-        CUDA_VERSION: 12.1.0
+        CUDA_VERSION: 13.0.0
     image: manga-translator:gpu
     container_name: manga-translator-gpu
+    depends_on:
+      manga-translator-model-manager:
+        condition: service_healthy
+    env_file:
+      - ../.env
     ports:
-      - "8001:8000"
+      - "127.0.0.1:8001:8000"
     environment:
       - MT_WEB_HOST=0.0.0.0
       - MT_WEB_PORT=8000
       - MT_USE_GPU=true
-      - MT_MODELS_TTL=300
-      - MT_RETRY_ATTEMPTS=-1
+      - MT_MODELS_TTL=60
+      - MT_RETRY_ATTEMPTS=1
       - MT_VERBOSE=false
+      # 作品路径与语言规则来自 config/series/<slug>.yaml；这里只声明
+      # 部署级的根目录，以及默认启用哪部作品（可用 .env 覆盖）。
+      - MT_SERIES_DIR=/app/config/series
+      - MT_LIBRARY_ROOT=/data/library
+      - MT_PIPELINE_ROOT=/data/pipeline
+      - MT_MODEL_MANAGER_URL=http://manga-translator-model-manager:8090
+      - MT_MODEL_MANAGER_TOKEN=manga-translator-internal
+      - OPENAI_API_BASE=http://manga-translator-model-manager:8080/v1
+      - OPENAI_MODEL=local-qwen35-4b-vl
+      - OPENAI_API_KEY=ollama
+      - OPENAI_API_ROTATION_STRATEGY=failover
+      # 持久化 Web 管理界面保存的 API 和服务端环境变量
+      - MANGA_TRANSLATOR_ENV_PATH=/app/.env
+      - PYTHONDONTWRITEBYTECODE=1
       # 设置管理员密码（首次启动）
       - MANGA_TRANSLATOR_ADMIN_PASSWORD=admin123456
     volumes:
@@ -82,19 +100,22 @@ services:
       - ./data/server:/app/manga_translator/server/data
       # 配置文件
       - ./data/config:/app/config
-      # 如果要让 Web 管理界面里保存的服务器 API Keys 在重建容器后保留，
-      # 请先创建空文件 ./data/app.env ，再取消下面这行注释：
-      # - ./data/app.env:/app/.env
+      # 作品配置（repo 内的唯一副本，宿主机与容器共用同一组 yaml）
+      - ../config/series:/app/config/series
+      - ./data/app.env:/app/.env
+      - ../manga_translator:/app/manga_translator:ro
+      # 漫画库：整库挂载，新增作品只需在 config/series/ 里加一个 yaml。
+      # 章节流水线只读原图、只写 <作品>/results，不会修改 RAW。
+      # 宿主机路径由项目根目录 .env 的 MT_LIBRARY_HOST 决定。
+      - "${MT_LIBRARY_HOST:-D:/Resources/Download/manga-dl}:/data/library"
+      - ./data/pipeline:/data/pipeline
     deploy:
       resources:
         limits:
           memory: 16G  # GPU 版本需要更多内存，根据服务器配置调整（建议 8G-32G）
         reservations:
           memory: 4G
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    gpus: all
     # 添加交换空间限制
     mem_swappiness: 60
     restart: unless-stopped
@@ -104,3 +125,96 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  # Existing local Qwen server. The chapter runtime uses it in external mode,
+  # while the Web container still unloads OCR/inpaint before Qwen requests.
+  manga-translator-qwen:
+    profiles: ["legacy-qwen"]
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:5268283a8d6510d167364f19aee93e98180d8eb0cac4b7edb20af7e3edf40c17
+    container_name: manga-translator-qwen
+    command:
+      - --model
+      - /models/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf
+      - --mmproj
+      - /models/mmproj-Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-BF16.gguf
+      - --alias
+      - local-qwen35-4b-vl
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - "32768"
+      - --cache-type-k
+      - q8_0
+      - --cache-type-v
+      - q8_0
+      - --load-mode
+      - none
+      - --flash-attn
+      - "on"
+      - --n-gpu-layers
+      - all
+      - --parallel
+      - "1"
+      - --jinja
+      - --reasoning
+      - off
+    ports:
+      - "127.0.0.1:18081:8080"
+    volumes:
+      - "D:/Work/Local_ai/model:/models:ro"
+    gpus: all
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+        reservations:
+          memory: 4G
+    mem_swappiness: 0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  # Optional restricted internal model supervisor for deployments that do not
+  # expose a separate Qwen container.
+  manga-translator-model-manager:
+    build:
+      context: ..
+      dockerfile: packaging/model_manager/Dockerfile
+    image: manga-translator-model-manager:3.0.4
+    container_name: manga-translator-model-manager
+    environment:
+      - MT_MODEL_CONTROL_PORT=8090
+      - MT_LLAMA_PORT=8080
+      - MT_MODEL_MANAGER_TOKEN=manga-translator-internal
+      - MT_MODEL_DIR=/models
+      - MT_QWEN_MODEL_PATH=/models/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf
+      - MT_QWEN_MMPROJ_PATH=/models/mmproj-Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-BF16.gguf
+      - MT_QWEN_CONTEXT_SIZE=24576
+      - MT_EMBEDDING_MODEL_PATH=/models/bge-m3-Q4_K_M.gguf
+    volumes:
+      - "D:/Work/Local_ai/model:/models:ro"
+    gpus: all
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+        reservations:
+          memory: 4G
+    mem_swappiness: 0
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
