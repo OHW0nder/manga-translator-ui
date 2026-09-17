@@ -863,6 +863,13 @@ def _sort_panels_fill(panels: List[Tuple[int, int, int, int]], right_to_left: bo
     return ordered
 
 
+# Webtoon strips are single-column content: panel detection cannot add
+# information there, while kumiko's cost grows steeply with image height
+# (quadratic in practice). Above this height/width ratio, skip straight to
+# the simple sort.
+PANEL_SORT_MAX_ASPECT_RATIO = 3.0
+
+
 def sort_regions(
     regions: List[TextBlock],
     right_to_left: bool = True,
@@ -876,6 +883,16 @@ def sort_regions(
     # If simple sort is forced, use it and return immediately.
     if force_simple_sort:
         return _simple_sort(regions, right_to_left)
+
+    # Extreme-aspect strips (webtoons): panel detection is meaningless and
+    # prohibitively slow; read order is simply top-to-bottom.
+    if img is not None:
+        img_height, img_width = img.shape[:2]
+        if (
+            img_width > 0
+            and img_height / img_width >= PANEL_SORT_MAX_ASPECT_RATIO
+        ):
+            return _simple_sort(regions, right_to_left)
 
     # 1. Panel detection + sorting within panels
     if img is not None:

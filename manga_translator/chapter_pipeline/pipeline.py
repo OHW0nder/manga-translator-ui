@@ -83,6 +83,13 @@ class ChapterPipelineService:
         self.initialize()
         scan_root = Path(root or self.settings.raw_dir).resolve()
         strict = scan_root == self.settings.raw_dir.resolve()
+        hash_cache = (
+            self.storage.page_hash_cache(
+                self.settings.series_slug, self.settings.series_name
+            )
+            if include_hashes
+            else None
+        )
         report = scan_inventory(
             scan_root,
             series_name=self.settings.series_name,
@@ -96,6 +103,7 @@ class ChapterPipelineService:
                 self.settings.expected_page_count if strict else 0
             ),
             include_hashes=include_hashes,
+            hash_cache=hash_cache,
         )
         if report.chapters:
             self.storage.upsert_inventory(report)

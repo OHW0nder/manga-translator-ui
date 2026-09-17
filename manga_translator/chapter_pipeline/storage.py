@@ -74,7 +74,20 @@ class PipelineStorage:
             with self.connect() as connection:
                 connection.executescript(_SCHEMA)
                 self._ensure_fts(connection)
+                self._migrate_schema(connection)
             self._initialized = True
+
+    def _migrate_schema(self, connection: sqlite3.Connection) -> None:
+        """Add columns introduced after the initial schema in-place."""
+
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(pages)")
+        }
+        if "source_mtime_ns" not in columns:
+            connection.execute(
+                "ALTER TABLE pages ADD COLUMN source_mtime_ns "
+                "INTEGER NOT NULL DEFAULT 0"
+            )
 
     def _ensure_fts(self, connection: sqlite3.Connection) -> None:
         try:
@@ -180,15 +193,17 @@ class PipelineStorage:
                         """
                         INSERT INTO pages(
                             id, chapter_id, series_id, relative_path, filename,
-                            sha256, size_bytes, source_language, width, height,
+                            sha256, size_bytes, source_mtime_ns,
+                            source_language, width, height,
                             updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(id) DO UPDATE SET
                             chapter_id = excluded.chapter_id,
                             series_id = excluded.series_id,
                             filename = excluded.filename,
                             sha256 = excluded.sha256,
                             size_bytes = excluded.size_bytes,
+                            source_mtime_ns = excluded.source_mtime_ns,
                             source_language = excluded.source_language,
                             width = excluded.width,
                             height = excluded.height,
@@ -202,6 +217,7 @@ class PipelineStorage:
                             page.filename,
                             page.sha256,
                             page.size_bytes,
+                            page.source_mtime_ns,
                             source_language_value(page.source_language),
                             page.width,
                             page.height,
@@ -210,6 +226,29 @@ class PipelineStorage:
                     )
             connection.execute("COMMIT")
         return series_id
+
+    def page_hash_cache(
+        self, series_slug: str, series_name: str
+    ) -> dict[str, tuple[int, int, str]]:
+        """Known page digests for reuse by ``scan_inventory``.
+
+        Returns ``relative_path -> (size_bytes, source_mtime_ns, sha256)``;
+        entries with unknown mtime or hash are excluded because they cannot
+        prove a file is unchanged.
+        """
+
+        self.initialize()
+        series_id = f"series:{series_slug or _slug(series_name)}"
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT relative_path, size_bytes, source_mtime_ns, sha256
+                FROM pages
+                WHERE series_id = ? AND sha256 != '' AND source_mtime_ns > 0
+                """,
+                (series_id,),
+            ).fetchall()
+        return {row[0]: (row[1], row[2], row[3]) for row in rows}
 
     def list_chapters(self, series_id: str | None = None) -> list[dict[str, Any]]:
         self.initialize()
@@ -1414,6 +1453,7 @@ CREATE TABLE IF NOT EXISTS pages (
     filename TEXT NOT NULL,
     sha256 TEXT NOT NULL DEFAULT '',
     size_bytes INTEGER NOT NULL DEFAULT 0,
+    source_mtime_ns INTEGER NOT NULL DEFAULT 0,
     source_language TEXT NOT NULL,
     width INTEGER,
     height INTEGER,

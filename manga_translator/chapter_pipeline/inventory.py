@@ -62,12 +62,18 @@ def scan_inventory(
     expected_page_count: int = 0,
     include_hashes: bool = True,
     chapter_pattern: re.Pattern[str] | None = None,
+    hash_cache: dict[str, tuple[int, int, str]] | None = None,
 ) -> InventoryReport:
     """Scan chapter directories while ignoring every nested work directory.
 
     Chapter languages come from ``languages``, the active series' rule set;
     a chapter whose number matches no rule is reported as an error instead of
     being assigned a guessed language.
+
+    ``hash_cache`` maps ``relative_path -> (size_bytes, mtime_ns, sha256)``.
+    When a page's size and mtime match the cache, the cached digest is reused
+    instead of re-reading and re-hashing the file; fresh digests are written
+    back into the mapping so repeated scans in one process also benefit.
     """
 
     root_path = Path(root).resolve()
@@ -125,8 +131,24 @@ def scan_inventory(
                 image_path.relative_to(root_path)
             )
             try:
-                digest = _sha256(image_path) if include_hashes else ""
-                size = image_path.stat().st_size
+                stat = image_path.stat()
+                size = stat.st_size
+                mtime_ns = stat.st_mtime_ns
+                digest = ""
+                if include_hashes:
+                    cached = (
+                        hash_cache.get(relative_path) if hash_cache else None
+                    )
+                    if cached and cached[0] == size and cached[1] == mtime_ns:
+                        digest = cached[2]
+                    else:
+                        digest = _sha256(image_path)
+                        if hash_cache is not None:
+                            hash_cache[relative_path] = (
+                                size,
+                                mtime_ns,
+                                digest,
+                            )
             except OSError as exc:
                 report.errors.append(f"failed to inspect {relative_path}: {exc}")
                 continue
@@ -139,6 +161,7 @@ def scan_inventory(
                     source_language=language,
                     sha256=digest,
                     size_bytes=size,
+                    source_mtime_ns=mtime_ns,
                 )
             )
         report.chapters.append(chapter)

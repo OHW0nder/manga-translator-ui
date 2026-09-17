@@ -123,6 +123,7 @@ class PageInventory:
     source_language: SourceLanguage | str
     sha256: str
     size_bytes: int
+    source_mtime_ns: int = 0
     width: int | None = None
     height: int | None = None
 
