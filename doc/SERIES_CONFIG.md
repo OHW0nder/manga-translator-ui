@@ -98,6 +98,8 @@ defaults:                     # 跨语言基线，schema 与 /chapters/jobs 的 
       ...
     inpaint:
       inpainting_size: 2048
+  # 韩式条漫分页拼接（见 §2.6），0 = 关闭
+  ocr_boundary_overlap: 256
 ```
 
 ### 2.1 `chapters` 选择器语法

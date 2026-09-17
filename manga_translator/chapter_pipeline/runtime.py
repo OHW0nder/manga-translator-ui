@@ -161,10 +161,10 @@ class DefaultChapterRuntime:
                 "filter_text_enabled": True,
             }
         )
-        page_refs: list[tuple[StageExecution, dict[str, Any], Path]] = []
+        page_refs: list[tuple[StageExecution, dict[str, Any], Path, int]] = []
         skipped = 0
         for execution in executions:
-            for page in execution.pages:
+            for page_index, page in enumerate(execution.pages):
                 existing = execution.artifacts.read_json(
                     execution.chapter["name"],
                     ChapterStage.OCR,
@@ -186,6 +186,7 @@ class DefaultChapterRuntime:
                             ChapterStage.OCR,
                             page,
                         ),
+                        page_index,
                     )
                 )
         batch_size = max(
@@ -203,13 +204,46 @@ class DefaultChapterRuntime:
                     return
                 chunk = page_refs[batch_start : batch_start + batch_size]
                 loaded_images = []
+                offsets: dict[int, int] = {}
                 try:
-                    for execution, page, work_path in chunk:
+                    for position, (
+                        execution,
+                        page,
+                        work_path,
+                        page_index,
+                    ) in enumerate(chunk):
                         source_path = self._source_path(execution, page)
-                        shutil.copy2(source_path, work_path)
-                        image = open_pil_image(work_path, eager=False)
-                        image.name = str(work_path)
+                        overlap = _boundary_overlap(execution.options)
+                        stitched = None
+                        if overlap > 0:
+                            stitched = self._stitch_boundary(
+                                execution,
+                                page_index,
+                                overlap=overlap,
+                            )
+                        if stitched is None:
+                            shutil.copy2(source_path, work_path)
+                            image_path = work_path
+                            offsets[position] = 0
+                        else:
+                            stitched_image, offset = stitched
+                            # Scratch for OCR only; JPEG keeps it ~0.4MB/page
+                            # instead of ~2MB/page for a lossless PNG.
+                            image_path = work_path
+                            stitched_image.save(
+                                image_path, format="JPEG", quality=95
+                            )
+                            stitched_image.close()
+                            offsets[position] = offset
+                        image = open_pil_image(image_path, eager=False)
+                        image.name = str(image_path)
                         loaded_images.append(image)
+                        chunk[position] = (
+                            execution,
+                            page,
+                            image_path,
+                            page_index,
+                        )
                     batch_items = [
                         (image, config.model_copy(deep=True))
                         for image in loaded_images
@@ -222,7 +256,9 @@ class DefaultChapterRuntime:
                         raise RuntimeError(
                             "OCR batch returned an unexpected number of contexts"
                         )
-                    for index, (execution, page, work_path) in enumerate(chunk):
+                    for index, (execution, page, work_path, page_index) in enumerate(
+                        chunk
+                    ):
                         context = contexts[index]
                         if getattr(context, "translation_error", None):
                             raise RuntimeError(str(context.translation_error))
@@ -246,6 +282,12 @@ class DefaultChapterRuntime:
                             relative_path=page["relative_path"],
                             source_language=source_language,
                             artifact_version=execution.version_hash,
+                        )
+                        payload = self._restore_page_coordinates(
+                            payload,
+                            execution,
+                            page,
+                            offset=offsets.get(index, 0),
                         )
                         page_id = page["id"]
                         self._write_page_artifact(
@@ -1445,6 +1487,54 @@ class DefaultChapterRuntime:
         except Exception as exc:
             logger.debug("Inpainter unload skipped: %s", exc)
 
+    def _stitch_boundary(
+        self,
+        execution: StageExecution,
+        page_index: int,
+        *,
+        overlap: int,
+    ):
+        """Stitched image for one page, or ``None`` when there is no neighbour."""
+
+        pages = execution.pages
+        if not pages or page_index >= len(pages):
+            return None
+        previous = pages[page_index - 1] if page_index > 0 else None
+        following = (
+            pages[page_index + 1] if page_index + 1 < len(pages) else None
+        )
+        if previous is None and following is None:
+            return None
+        return stitch_boundary_image(
+            self._source_path(execution, pages[page_index]),
+            self._source_path(execution, previous) if previous else None,
+            self._source_path(execution, following) if following else None,
+            overlap=overlap,
+        )
+
+    def _restore_page_coordinates(
+        self,
+        payload: dict[str, Any],
+        execution: StageExecution,
+        page: dict[str, Any],
+        *,
+        offset: int,
+    ) -> dict[str, Any]:
+        """Undo the boundary stitch so coordinates match the page image."""
+
+        if offset <= 0:
+            return payload
+        from PIL import Image
+
+        with Image.open(self._source_path(execution, page)) as image:
+            width, height = image.size
+        return remap_stitched_payload(
+            payload,
+            offset=offset,
+            width=width,
+            height=height,
+        )
+
     def _source_path(
         self,
         execution: StageExecution,
@@ -1633,6 +1723,186 @@ def _apply_render_options(config: Any, options: dict[str, Any]) -> None:
         config.render.direction = str(options["direction"])
     if options.get("alignment"):
         config.render.alignment = str(options["alignment"])
+
+
+def _boundary_overlap(options: dict[str, Any] | None) -> int:
+    """Pixels of the neighbouring pages to stitch onto each page (0 = off)."""
+
+    try:
+        value = int((options or {}).get("ocr_boundary_overlap", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, value)
+
+
+def stitch_boundary_image(
+    page_path: Path,
+    previous_path: Path | None,
+    next_path: Path | None,
+    *,
+    overlap: int,
+):
+    """Stack the previous page's tail and the next page's head onto a page.
+
+    Webtoon strips are often sliced at arbitrary heights, so a text line can be
+    cut in half by a page break. Neither half is recognisable on its own; only
+    the joined image contains the whole line. Returns ``(image, offset)`` where
+    ``offset`` is how many pixels were prepended above the page.
+    """
+
+    from PIL import Image
+
+    def load(path: Path | None):
+        if path is None:
+            return None
+        with Image.open(path) as handle:
+            return handle.convert("RGB")
+
+    own = load(page_path)
+    if own is None or overlap <= 0:
+        return None
+    width = own.width
+    previous = load(previous_path)
+    following = load(next_path)
+    head = tail = None
+    if previous is not None:
+        height = min(overlap, previous.height)
+        if height > 0:
+            head = previous.crop(
+                (0, previous.height - height, min(width, previous.width), previous.height)
+            )
+    if following is not None:
+        height = min(overlap, following.height)
+        if height > 0:
+            tail = following.crop(
+                (0, 0, min(width, following.width), height)
+            )
+    if head is None and tail is None:
+        own.close()
+        if previous is not None:
+            previous.close()
+        if following is not None:
+            following.close()
+        return None
+    head_height = head.height if head is not None else 0
+    tail_height = tail.height if tail is not None else 0
+    stitched = Image.new(
+        "RGB",
+        (width, head_height + own.height + tail_height),
+        (255, 255, 255),
+    )
+    if head is not None:
+        stitched.paste(head, (0, 0))
+    stitched.paste(own, (0, head_height))
+    if tail is not None:
+        stitched.paste(tail, (0, head_height + own.height))
+    own.close()
+    for image in (previous, following, head, tail):
+        if image is not None:
+            image.close()
+    return stitched, head_height
+
+
+def _crop_mask_base64(
+    value: str,
+    *,
+    offset: int,
+    width: int,
+    height: int,
+) -> str:
+    """Crop a stitched-image mask back down to the page's own rows."""
+
+    import cv2
+    import numpy as np
+
+    try:
+        decoded = cv2.imdecode(
+            np.frombuffer(base64.b64decode(value), dtype=np.uint8),
+            cv2.IMREAD_GRAYSCALE,
+        )
+    except Exception:
+        return value
+    if decoded is None:
+        return value
+    if decoded.shape[0] < offset + height:
+        padded = np.zeros(
+            (offset + height, decoded.shape[1]),
+            dtype=decoded.dtype,
+        )
+        padded[: decoded.shape[0], : decoded.shape[1]] = decoded
+        decoded = padded
+    cropped = decoded[offset : offset + height, :width]
+    ok, buffer = cv2.imencode(".png", cropped)
+    if not ok:
+        return value
+    return base64.b64encode(buffer.tobytes()).decode("ascii")
+
+
+def remap_stitched_payload(
+    payload: dict[str, Any],
+    *,
+    offset: int,
+    width: int,
+    height: int,
+) -> dict[str, Any]:
+    """Move a stitched-image OCR payload back into page coordinates.
+
+    Regions are clamped to the page box rather than dropped, so a line cut by
+    the page break stays registered on both neighbouring pages and each side
+    erases its own half.
+    """
+
+    if offset <= 0:
+        return payload
+    result = dict(payload)
+    regions: list[dict[str, Any]] = []
+    for region in payload.get("regions") or []:
+        if not isinstance(region, dict):
+            continue
+        item = dict(region)
+        lines: list[list[list[float]]] = []
+        for line in item.get("lines") or []:
+            clamped: list[list[float]] = []
+            for point in line:
+                try:
+                    x = float(point[0])
+                    y = float(point[1]) - offset
+                except (TypeError, ValueError, IndexError):
+                    continue
+                clamped.append(
+                    [
+                        min(max(x, 0.0), float(width)),
+                        min(max(y, 0.0), float(height)),
+                    ]
+                )
+            if len(clamped) >= 3:
+                lines.append(clamped)
+        if not lines:
+            continue
+        xs = [point[0] for line in lines for point in line]
+        ys = [point[1] for line in lines for point in line]
+        # Drop slivers that only overlap the page by a pixel or two; they come
+        # from the neighbour and would erase a stray line.
+        if (max(xs) - min(xs)) < 3 or (max(ys) - min(ys)) < 3:
+            continue
+        item["lines"] = lines
+        item["center"] = [
+            (min(xs) + max(xs)) / 2.0,
+            (min(ys) + max(ys)) / 2.0,
+        ]
+        regions.append(item)
+    result["regions"] = regions
+    mask = payload.get("mask_raw")
+    if isinstance(mask, str) and mask:
+        result["mask_raw"] = _crop_mask_base64(
+            mask,
+            offset=offset,
+            width=width,
+            height=height,
+        )
+    result["original_width"] = width
+    result["original_height"] = height
+    return result
 
 
 def _decode_mask(value: Any):

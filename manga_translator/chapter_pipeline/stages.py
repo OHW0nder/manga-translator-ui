@@ -238,6 +238,7 @@ def stage_config(
                 8,
             ),
             "korean_webtoon": options.get("korean_webtoon", False),
+            "ocr_boundary_overlap": options.get("ocr_boundary_overlap", 0),
             # The OCR stage drops filtered text lines, so the filter rules
             # change its output and must take part in the version hash.
             "ocr_filter_rules": ocr_filter_rules(),

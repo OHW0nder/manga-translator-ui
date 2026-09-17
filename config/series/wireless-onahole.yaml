@@ -19,6 +19,19 @@ languages:
   # 每条规则除 chapters/source/ocr_model/ocr_hint/translator_code 之外的键，
   # 都会作为该章节区间的参数覆盖，深合并到下面的 defaults 之上。
   # 优先级：作业 options > 语言规则覆盖 > defaults。
+  #
+  # 例外章先于区间规则，因为规则是"首个命中生效"。
+  - chapters: "74"
+    source: es
+    ocr_model: paddleocr_latin
+    ocr_hint: Spanish
+    translator_code: ESP
+    # Chapter 74 是西班牙语原稿（实测 169 个区域中 163 个为拉丁文字）。
+    # 用 paddleocr_korean 读西语会丢重音符并产生乱码
+    # （"TAMBIÉN CONEXIÓN INALÁMBRICA" → "TaMPLa3 CONEXION INALAMBRICA"），
+    # 故单独路由到西语模型。
+    # 注意：Chapter 1-69 尚未处理，可能还有类似情况，批量前建议先做语言抽检。
+
   - chapters: "1-90"
     source: ko
     ocr_model: paddleocr_korean
@@ -57,6 +70,14 @@ translation:
 
 defaults:
   ocr_pages_per_batch: 8
+  # 韩式条漫按固定高度切片，文字常被分页线切开：
+  # 气泡可能只剩半截轮廓（被 ignore_bubble 当气泡外文字过滤），
+  # 甚至一行字的上下两半分落两页（单页都认不出）。
+  # 识别每页时把上页尾部与下页头部各拼 256px 进来，行完整后再把坐标裁剪回本页；
+  # 跨界的行会在相邻两页各留一份裁剪后的区域，两侧都能擦干净。
+  # 代价：OCR 像素量约 +10%（540 页实测预估 OCR 从 39 分钟到约 43 分钟）。
+  # 0 = 关闭。
+  ocr_boundary_overlap: 256
   mask_dilation: 20
   models:
     inpaint: lama_large
