@@ -176,10 +176,7 @@ Ch74/81 重跑版与 91+ 试点 3 章全部中招；70–90 首轮（无拼接�
 | `뉴토` / `웹툰왕국` / `제공사` | 韩文水印行 | 覆盖 `뉴토끼`/`뉴토까` 等变体 |
 | `가장 빠른` / `가장 바른` | 水印固定开头 | 兜底（OCR 会把 `웹툰` 认成 `원문`） |
 | `paypal` / `temlex` | 页 001 的 PayPal 捐款链接 | 2026-09-17 加入。OCR 变体 `WPAPALMTEMLEXUSE`/`AWWPAYPALMETEMLEXOUIE` 都含 `TEMLEX` |
-
-**西语站点水印待决策**（91+ 试点发现，全量批前必须定稿，否则会被当对白擦成灰块）：
-`TEMPLESCANESP.NET`（变体稳定含 `SCANESP`）、`SUBMANHWA.COM` / `discord.gg/submanhwa`
-（→ `submanhwa`）、`MANGA18FX.COM`（→ `manga18fx`）、`ÚNETE AL DISCORD` / `VISITANOS EN:` 推广行。
+| `scanesp` / `submanhwa` / `manga18fx` | 西语汉化组站点水印 | 2026-09-17 加入（用户确认）。`TEMPLESCANESP.NET` 各变体稳定含 `SCANESP`；`discord.gg/submanhwa` 由 `submanhwa` 兜住。**注意：加入晚于 74/81/91/92/117 的重跑，这 5 章的站点水印仍被当对白擦除，用户决定不重跑**；全量批（93–119，含 4 个大章）将带新过滤跑 |
 
 **换作品必须重新验证规则**（不同站、不同 OCR 误认模式）。验证方法：把全部区域文本
 跑一遍规则，统计命中数与对白误伤数（本次是 40 命中 / 0 误伤）。
