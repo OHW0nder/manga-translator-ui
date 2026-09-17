@@ -204,7 +204,7 @@ class DefaultChapterRuntime:
                     return
                 chunk = page_refs[batch_start : batch_start + batch_size]
                 loaded_images = []
-                offsets: dict[int, int] = {}
+                offsets: dict[int, int | None] = {}
                 try:
                     for position, (
                         execution,
@@ -224,7 +224,7 @@ class DefaultChapterRuntime:
                         if stitched is None:
                             shutil.copy2(source_path, work_path)
                             image_path = work_path
-                            offsets[position] = 0
+                            offsets[position] = None
                         else:
                             stitched_image, offset = stitched
                             # Scratch for OCR only; JPEG keeps it ~0.4MB/page
@@ -287,7 +287,7 @@ class DefaultChapterRuntime:
                             payload,
                             execution,
                             page,
-                            offset=offsets.get(index, 0),
+                            offset=offsets.get(index),
                         )
                         page_id = page["id"]
                         self._write_page_artifact(
@@ -1518,11 +1518,17 @@ class DefaultChapterRuntime:
         execution: StageExecution,
         page: dict[str, Any],
         *,
-        offset: int,
+        offset: int | None,
     ) -> dict[str, Any]:
-        """Undo the boundary stitch so coordinates match the page image."""
+        """Undo the boundary stitch so coordinates match the page image.
 
-        if offset <= 0:
+        ``None`` means the page was not stitched at all. An offset of ``0``
+        still requires a remap when the chapter's first page got the next
+        page's head appended below it: the payload is then taller than the
+        page and its mask must be cropped back to the page box.
+        """
+
+        if offset is None:
             return payload
         from PIL import Image
 
@@ -1852,7 +1858,7 @@ def remap_stitched_payload(
     erases its own half.
     """
 
-    if offset <= 0:
+    if offset < 0:
         return payload
     result = dict(payload)
     regions: list[dict[str, Any]] = []

@@ -9,7 +9,8 @@
 
 ** manga-translator-ui** 已从"写死 Love Quest"改造为**按作品可配置**的章节流水线；
 `config/series/wireless-onahole.yaml` 配好了 Wireless Onahole（70–90 韩文 / 91+ 西语 /
-74 例外为西语），并完成了 70–90 的 OCR + LaMa 擦除（540 页 / 2091 区域 / 全部发布）。
+74 例外为西语）。70–90 的 OCR + LaMa 擦除（540 页 / 2091 区域 / 全部发布）用的是旧参数；
+91+ 试点（91/92/117，33 页）已完成并修复了页 001 蒙版错位 bug（§3.6）。
 代码已提交并推送到 fork 的 `feat/chapter-model-orchestration` 分支。
 
 ---
@@ -99,12 +100,11 @@ docker exec manga-translator-gpu python -m manga_translator.chapter_pipeline.pre
 
 | 项 | 状态 |
 | --- | --- |
-| 70–90 OCR + 擦除 | **已跑完一轮**（job `0ad26602`，60m17s，540 页 / 2091 区域 / 全部发布） |
-| 但该轮用的是**旧参数**（无拼接、旧过滤规则） | 需重跑才能应用 §3.3/§3.4 与 Ch74 西语规则 |
-| Chapter 74 重跑 | **已完成并验证**（见 §3.5） |
-| Chapter 81 重跑（页 47 顶部截断验证） | **进行中** |
+| 70–90 OCR + 擦除 | 已跑完一轮（旧参数），**需重跑**以应用 §3.3/§3.4/§3.6 与新过滤（过滤改动已使旧缓存失效） |
+| Chapter 74 / 81 重跑 | **已完成**（页 001 bug 修复后重跑，验证通过） |
+| 91+ 试点（91/92/117） | **已完成并验收**（33 页 / 431 区域，西语模型确认可用） |
 | 1–69 章 | **未处理**，且语言未验证（74 章是西语，说明"1–90 全韩文"不成立） |
-| 91–119 章 | 未处理，西语块参数未调优 |
+| 93–119 其余 26 章 | 未处理；全量前先定稿过滤列表（见 §5 待决策） |
 
 ### 3.5 Ch74 重跑验证（西语模型 + 新过滤 + 拼接）
 
@@ -123,6 +123,27 @@ docker exec manga-translator-gpu python -m manga_translator.chapter_pipeline.pre
 
 > Chapter 70 的 `.pipeline` 中间产物曾被误删（见 §7），已由重跑恢复，
 > 恢复结果与删除前一致（73 页 / 124 区域）。
+
+### 3.6 页 001 蒙版错位 bug（2026-09-17 发现并修复）
+
+**现象**：凡开启拼接的章节，页 001 的气泡文字不被擦除，文字上方的图案反被 LaMa 涂花。
+Ch74/81 重跑版与 91+ 试点 3 章全部中招；70–90 首轮（无拼接）不受影响；中段页正常。
+
+**根因**：`stitch_boundary_image()` 给首页拼上下页头部 256px，但因无上邻页返回
+`offset=0`；`remap_stitched_payload()` 与 `_restore_page_coordinates()` 都是
+`offset <= 0` 直接返回 → 首页产物里的 `mask_raw`/`original_height` 停留在拼接高度
+（页高 +256）。擦除阶段把多出 256px 的蒙版压缩回页面 → 整页错位。
+
+**修复**：`offsets` 改存 `int | None`（None = 未拼接），`offset=0` 也走重映射；
+`remap_stitched_payload()` 的短路条件改为 `offset < 0`。offset=0 时区域坐标不需平移，
+越界的下页头部区域经钳制后被 <3px 碎块规则丢弃，蒙版裁回页框。
+
+**验收**：5 章重跑后所有页 001 的 `mask_h == raw_h`；目测文字擦净、图案不再涂伤；
+121 页 / 699 区域 / `publish_errors: []`。
+
+**教训**：验收不能只看统计指标（当时报告全绿），必须目测成图——本 bug 是像素级
+对比 + 蒙版叠加图定位的。另注意 `version_hash` 不含代码版本，**改流水线代码不会
+自动失效旧产物**，必须手动删除受影响章节的 `.pipeline` 重跑。
 
 ### 4.1 实测速率（Chapter 70 / 73 页 / 169,733 px）
 
@@ -154,6 +175,11 @@ docker exec manga-translator-gpu python -m manga_translator.chapter_pipeline.pre
 | `staff` | 汉化组署名页 | 24 处（`STAFF` / `LIMPIEZA STAFF` / `TRADUCCION STAFF` / `REDRAW STAFF`） |
 | `뉴토` / `웹툰왕국` / `제공사` | 韩文水印行 | 覆盖 `뉴토끼`/`뉴토까` 等变体 |
 | `가장 빠른` / `가장 바른` | 水印固定开头 | 兜底（OCR 会把 `웹툰` 认成 `원문`） |
+| `paypal` / `temlex` | 页 001 的 PayPal 捐款链接 | 2026-09-17 加入。OCR 变体 `WPAPALMTEMLEXUSE`/`AWWPAYPALMETEMLEXOUIE` 都含 `TEMLEX` |
+
+**西语站点水印待决策**（91+ 试点发现，全量批前必须定稿，否则会被当对白擦成灰块）：
+`TEMPLESCANESP.NET`（变体稳定含 `SCANESP`）、`SUBMANHWA.COM` / `discord.gg/submanhwa`
+（→ `submanhwa`）、`MANGA18FX.COM`（→ `manga18fx`）、`ÚNETE AL DISCORD` / `VISITANOS EN:` 推广行。
 
 **换作品必须重新验证规则**（不同站、不同 OCR 误认模式）。验证方法：把全部区域文本
 跑一遍规则，统计命中数与对白误伤数（本次是 40 命中 / 0 误伤）。
@@ -206,6 +232,11 @@ docker compose -f packaging/docker-compose.yml up -d --no-build manga-translator
 docker exec manga-translator-gpu python -m manga_translator.chapter_pipeline.prepare `
   --stages ocr inpaint --chapters "Chapter 91" "Chapter 92"
 
+# Git Bash 下给 docker exec 传容器内路径要加 MSYS_NO_PATHCONV=1，
+# 否则 /data/... 会被转义成 C:/Program Files/Git/data/...（report_path 曾被写坏）
+MSYS_NO_PATHCONV=1 docker exec manga-translator-gpu python -m manga_translator.chapter_pipeline.prepare `
+  --stages ocr inpaint --chapters "Chapter 93" --report-path /data/pipeline/reports/batch-a.json
+
 # 查进度（页面） / API
 #   http://127.0.0.1:8001/chapters
 Invoke-RestMethod "http://127.0.0.1:8001/chapters/jobs"
@@ -225,3 +256,37 @@ git checkout upstream/main -- test/ .gitattributes .editorconfig Unix-*.sh
 - **认证**：`credential.helper=manager`，首次 push 会弹浏览器登录，token 存 GCM
 - **不要 `git add -A` 之前不检查**：`.env`（含 GEMINI_API_KEY）与 `presets/`
   靠 `.gitignore` 排除；该文件曾被删，若再删必须先恢复
+
+## 10. 批量处理标准流程（可复用，2026-09-17 验证）
+
+适用于任何作品/语言块的新增批量 OCR+擦除，四步一闭环：
+
+### 步骤 1：前置确认
+- 容器 healthy、分支正确、两份 `filter_list.json` 同步、磁盘余量
+- 待处理章节的页数盘点（`ls | wc -l`），标记异常大章（可能是合集）
+
+### 步骤 2：试点批（3 章、30–40 页）
+```powershell
+MSYS_NO_PATHCONV=1 docker exec manga-translator-gpu python -m manga_translator.chapter_pipeline.prepare `
+  --stages ocr inpaint --chapters "Chapter A" "Chapter B" "Chapter C" `
+  --report-path /data/pipeline/reports/pilot-<lang>.json
+```
+试点回答 4 个问题：语言路由对不对 / 识别质量（重音、符号）/ 参数基线够不够 /
+过滤规则命中与误伤。
+
+### 步骤 3：验收（四级，缺一不可）
+1. **报告级**：`publish_errors: []`、无 error 章、`report_path` 未被路径转义写坏
+2. **计数级**：每章发布页数 = RAW 页数；区域数不异常偏低（偏低 = 路由错模型）
+3. **语言级**：扫 `.pipeline/ocr/<hash>/*.json`，统计韩文区域数（应为 0/个位数）、
+   空文本区域数（应为 0）、`prob` 分布
+4. **目测级**（必须，统计全绿≠没问题，§3.6 是教训）：每批抽 2 章 × 3–5 页看擦除；
+   发现异常时用蒙版叠加图定位（`mask_raw` base64 解码后叠原图）
+
+### 步骤 4：参数/过滤定稿 → 全量分批
+- 参数覆盖只写 `config/series/<slug>.yaml` 的对应语言规则，不改代码
+- **过滤列表必须在全量前定稿**（改动 = 全部 OCR 缓存失效）
+- 全量分 2–3 批，每批独立报告，批间抽验
+- 收尾：更新本文件数据状态 + git 提交推送
+
+### 速率参考（720px 宽长条，lama_large）
+OCR ≈ 3.7 s/页（拼接 +10%），擦除 ≈ 1.3 s/页；100 页约 9–10 分钟。
