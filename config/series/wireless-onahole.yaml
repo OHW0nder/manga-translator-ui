@@ -32,6 +32,15 @@ languages:
     # 故单独路由到西语模型。
     # 注意：Chapter 1-69 尚未处理，可能还有类似情况，批量前建议先做语言抽检。
 
+  # 韩文特典/合集章（2026-09-18 语言排查确认：每章 86-89% 页面在西语模型下
+  # 0-2 区域，目测 8/8 页为韩文对白、无西语；112 亦为韩文原稿）。
+  # 页数异常大（58/52/80/60 页）正是因为它们是合集。
+  - chapters: "101,103,107,112"
+    source: ko
+    ocr_model: paddleocr_korean
+    ocr_hint: Korean
+    translator_code: KOR
+
   - chapters: "1-90"
     source: ko
     ocr_model: paddleocr_korean
